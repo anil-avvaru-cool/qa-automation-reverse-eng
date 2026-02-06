@@ -17,7 +17,7 @@ try:
 except ImportError:
     javalang = None
 
-from analysis.ast_model import ASTNode, ASTTree, SourceLocation
+from static_analysis.ast_model import ASTNode, ASTTree, SourceLocation
 
 
 class BaseASTParser:
