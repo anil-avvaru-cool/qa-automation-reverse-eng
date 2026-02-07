@@ -1,144 +1,101 @@
 """
-Language detection for automation codebases.
+Language detection for automation reverse engineering.
 
 Responsibilities:
-- Detect programming languages used in a repository
-- Identify primary and secondary languages
-- Provide file-level and repo-level language metadata
+- Detect programming languages per file
+- Produce file-level language mapping
+- Emit normalized file language mapping for static analysis
 """
 
 from pathlib import Path
-from collections import defaultdict, Counter
-from typing import Dict, List, Set
+from typing import Dict, Set
+import pprint
+import logging
+import json
+
+logger = logging.getLogger(__name__)
+
+EXTENSION_LANGUAGE_MAP = {
+    ".py": "Python",
+    ".java": "Java",
+    ".js": "JavaScript",
+    ".ts": "TypeScript",
+    ".rb": "Ruby",
+    ".go": "Go",
+    ".cs": "CSharp",
+    ".cpp": "CPP",
+    ".c": "C",
+    ".kt": "Kotlin",
+    ".scala": "Scala",
+    ".sh": "Shell",
+}
 
 
-class LanguageDetector:
+def detect_languages(
+    repo_path: str,
+    normalized_root: str | None = None
+) -> Dict[str, object]:
     """
-    Detects programming languages based on file extensions
-    and lightweight content heuristics.
+    Detect languages used in a repository.
+
+    Args:
+        repo_path: root of the original repository
+        normalized_root: root directory of normalized sources
+
+    Returns:
+        dict containing:
+          - primary_language
+          - languages
+          - file_language_map
+          - file_language_map_normalized
     """
+    repo_root = Path(repo_path)
+    normalized_root_path = (
+        Path(normalized_root)
+        if normalized_root
+        else repo_root / ".normalized"
+    )
 
-    # Canonical extension to language mapping
-    EXTENSION_LANGUAGE_MAP: Dict[str, str] = {
-        ".py": "Python",
-        ".java": "Java",
-        ".js": "JavaScript",
-        ".ts": "TypeScript",
-        ".rb": "Ruby",
-        ".go": "Go",
-        ".cs": "CSharp",
-        ".cpp": "Cpp",
-        ".c": "C",
-        ".kt": "Kotlin",
-        ".scala": "Scala",
-        ".sh": "Shell",
-        ".ps1": "PowerShell",
-        ".yaml": "YAML",
-        ".yml": "YAML",
-        ".json": "JSON",
-        ".xml": "XML",
-        ".groovy": "Groovy"
-    }
+    file_language_map: Dict[str, str] = {}
+    file_language_map_normalized: Dict[str, str] = {}
+    languages: Set[str] = set()
 
-    # Automation framework hints (content-based)
-    FRAMEWORK_HINTS: Dict[str, Set[str]] = {
-        "Python": {"selenium", "pytest", "unittest", "behave", "playwright"},
-        "Java": {"selenium", "testng", "junit", "cucumber"},
-        "JavaScript": {"cypress", "jest", "playwright", "webdriverio"},
-        "TypeScript": {"cypress", "playwright", "jest"},
-        "Ruby": {"rspec", "capybara"},
-        "Shell": {"bash", "sh"},
-    }
+    ignore_dirs = {".git", ".venv", "node_modules", "__pycache__"}
 
-    def __init__(self, repo_path: str):
-        self.repo_path = Path(repo_path)
+    for path in repo_root.rglob("*"):
+        if not path.is_file():
+            continue
 
-    def detect(self) -> Dict[str, object]:
-        """
-        Detect languages used in the repository.
+        if any(part in ignore_dirs for part in path.parts):
+            continue
 
-        Returns:
-            dict with:
-              - languages: set of detected languages
-              - primary_language: most dominant language
-              - language_distribution: percentage per language
-              - files_by_language: mapping of language -> file list
-        """
-        files_by_language: Dict[str, List[str]] = defaultdict(list)
-        language_counter: Counter = Counter()
-
-        for file_path in self._iter_source_files():
-            language = self._detect_language_for_file(file_path)
-            if not language:
-                continue
-
-            files_by_language[language].append(str(file_path))
-            language_counter[language] += 1
-
-        if not language_counter:
-            return {
-                "languages": set(),
-                "primary_language": None,
-                "language_distribution": {},
-                "files_by_language": {}
-            }
-
-        total_files = sum(language_counter.values())
-        distribution = {
-            lang: round((count / total_files) * 100, 2)
-            for lang, count in language_counter.items()
-        }
-
-        primary_language = language_counter.most_common(1)[0][0]
-
-        return {
-            "languages": set(language_counter.keys()),
-            "primary_language": primary_language,
-            "language_distribution": distribution,
-            "files_by_language": dict(files_by_language)
-        }
-
-    def _iter_source_files(self):
-        """
-        Iterate through relevant source files, skipping common noise.
-        """
-        ignore_dirs = {".git", ".venv", "node_modules", "target", "build", "__pycache__"}
-
-        for path in self.repo_path.rglob("*"):
-            if not path.is_file():
-                continue
-
-            if any(part in ignore_dirs for part in path.parts):
-                continue
-
-            yield path
-
-    def _detect_language_for_file(self, file_path: Path) -> str:
-        """
-        Detect language for a single file using extension and content.
-        """
-        extension = file_path.suffix.lower()
-
-        language = self.EXTENSION_LANGUAGE_MAP.get(extension)
+        language = EXTENSION_LANGUAGE_MAP.get(path.suffix.lower())
         if not language:
-            return ""
+            continue
 
-        # Lightweight content validation for automation frameworks
-        try:
-            content = file_path.read_text(encoding="utf-8", errors="ignore").lower()
-        except Exception:
-            return language
+        original_path = str(path)
+        normalized_path = str(
+            normalized_root_path / path.relative_to(repo_root)
+        )
 
-        hints = self.FRAMEWORK_HINTS.get(language)
-        if hints and any(hint in content for hint in hints):
-            return language
+        file_language_map[original_path] = language
+        file_language_map_normalized[normalized_path] = language
+        languages.add(language)
 
-        return language
+    primary_language = (
+        max(languages, key=lambda lang: list(file_language_map.values()).count(lang))
+        if languages
+        else None
+    )
 
+    result_dict = {
+        "primary_language": primary_language,
+        "languages": sorted(languages),
+        "file_language_map": file_language_map,
+        "file_language_map_normalized": file_language_map_normalized
+    }
+    
+    # formatted_json_string = json.dumps(result_dict, indent=4, sort_keys=True)    
+    # logger.info(f"language detection result_dict:\n{formatted_json_string}")
 
-def detect_languages(repo_path: str) -> Dict[str, object]:
-    """
-    Functional interface for pipeline usage.
-    """
-    detector = LanguageDetector(repo_path)
-    return detector.detect()
+    return result_dict

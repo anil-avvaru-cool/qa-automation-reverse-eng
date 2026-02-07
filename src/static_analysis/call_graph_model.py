@@ -6,12 +6,10 @@ Purpose:
 - Support impact analysis, entry-point discovery, and E2E test planning
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field, TypeAdapter
 
-
-@dataclass
-class CallGraphNode:
+class CallGraphNode(BaseModel):
     """
     Represents a callable unit (function or method).
     """
@@ -19,11 +17,9 @@ class CallGraphNode:
     name: str
     file_path: str
     language: str
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-
-@dataclass
-class CallGraphEdge:
+class CallGraphEdge(BaseModel):
     """
     Represents a call from one function/method to another.
     """
@@ -31,14 +27,12 @@ class CallGraphEdge:
     callee: str
     call_type: Optional[str] = None  # direct, virtual, static, unknown
 
-
-@dataclass
-class CallGraph:
+class CallGraph(BaseModel):
     """
     Container for the complete call graph.
     """
     language: str
     nodes: Dict[str, CallGraphNode]
     edges: List[CallGraphEdge]
-    entry_points: List[str] = field(default_factory=list)
-    metadata: Dict[str, any] = field(default_factory=dict)
+    entry_points: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)

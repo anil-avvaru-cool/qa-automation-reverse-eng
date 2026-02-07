@@ -1,0 +1,119 @@
+"""
+Static analysis pipeline for automation reverse engineering.
+
+Responsibilities:
+- Parse normalized source files into ASTs
+- Build CFG, DFG, Call Graph, and Dependency Graph
+- Aggregate analysis artifacts into a unified output
+"""
+import logging
+import json
+from typing import Dict, Any, List
+from pydantic import BaseModel, TypeAdapter
+
+from static_analysis.ast_model import ASTNode, ASTTree, SourceLocation
+from static_analysis.ast_parser import parse_source_file
+from static_analysis.cfg_builder import build_cfg
+from static_analysis.dfg_builder import build_dfg
+from static_analysis.call_graph_builder import build_call_graph
+from static_analysis.dependency_graph_builder import build_dependency_graph
+
+
+class StaticAnalysisPipeline:
+    """
+    Orchestrates static analysis stages.
+    """
+    logger = logging.getLogger(__name__)
+
+    def __init__(self, normalized_files: List[str], language_map: Dict[str, str]):
+        """
+        Args:
+            normalized_files: list of normalized source file paths
+            language_map: mapping of file_path -> detected language
+        """
+        self.normalized_files = normalized_files
+        self.language_map = language_map
+
+    def run(self) -> Dict[str, Any]:
+        """
+        Execute static analysis pipeline.
+
+        Returns:
+            dict containing ASTs, CFGs, DFGs, call graphs, and dependency graphs
+        """
+        ast_trees = []
+        cfgs = []
+        dfgs = []
+        call_graphs = []
+        dependency_graphs = []
+
+        for file_path in self.normalized_files[:3]:
+            language = self.language_map.get(file_path)
+            if not language:
+                continue
+
+            ast_tree = parse_source_file(file_path, language)
+            ast_trees.append(ast_tree)
+
+            cfgs.extend(build_cfg(ast_tree))
+            dfgs.extend(build_dfg(ast_tree))
+            call_graphs.append(build_call_graph(ast_tree))
+            dependency_graphs.append(build_dependency_graph(ast_tree))
+
+        static_analysis_output = {
+            "ast_trees": ast_trees,
+            "control_flow_graphs": cfgs,
+            "data_flow_graphs": dfgs,
+            "call_graphs": call_graphs,
+            "dependency_graphs": dependency_graphs,
+            "analysis_summary": self._build_summary(
+                ast_trees,
+                cfgs,
+                dfgs,
+                call_graphs,
+                dependency_graphs
+            )
+        }
+        # Create an adapter for a list of ASTTree objects
+        adapter = TypeAdapter(List[ASTTree])
+
+        # Use dump_json() (Note: this returns bytes by default)
+        json_bytes = adapter.dump_json(ast_trees)        
+        self.logger.info(f"static analysis output:\n{json_bytes.decode()}")
+
+        return static_analysis_output
+
+    @staticmethod
+    def _build_summary(
+        asts,
+        cfgs,
+        dfgs,
+        call_graphs,
+        dependency_graphs
+    ) -> Dict[str, int]:
+        """
+        Build a concise analysis summary.
+        """
+        return {
+            "total_files_parsed": len(asts),
+            "total_cfgs": len(cfgs),
+            "total_dfgs": len(dfgs),
+            "total_call_graphs": len(call_graphs),
+            "total_dependency_graphs": len(dependency_graphs)
+        }
+
+
+def run_static_analysis(
+    normalized_files: List[str],
+    language_map: Dict[str, str]
+) -> Dict[str, Any]:
+    """
+    Functional entry point for static analysis pipeline.
+
+    Intended usage:
+    - Semantic analysis stage
+    - CI/CD
+    - Batch processing
+    """
+    pipeline = StaticAnalysisPipeline(normalized_files, language_map)
+    return pipeline.run()

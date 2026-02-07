@@ -39,7 +39,11 @@ class IngestionPipeline:
               - ingestion_summary
         """
         repository_inventory = scan_repository(self.repo_path)
-        language_info = detect_languages(self.repo_path)
+        language_info = detect_languages(
+            self.repo_path,
+            normalized_root=self.normalized_output_dir
+        )
+
         dependency_info = resolve_dependencies(self.repo_path)
         normalization_info = normalize_code(
             self.repo_path,
