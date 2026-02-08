@@ -6,6 +6,12 @@ from static_analysis.static_analysis_pipeline import run_static_analysis
 import shutil
 import os
 
+app_log_file = "app.log"
+if os.path.exists(app_log_file):
+  os.remove(app_log_file)
+else:
+  print("The file does not exist") 
+
 logging.basicConfig(
     level=logging.DEBUG,  # Lowest level to capture
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

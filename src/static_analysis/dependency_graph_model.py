@@ -6,12 +6,11 @@ Purpose:
 - Support impact analysis, refactoring, and knowledge base generation
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class DependencyNode:
+class DependencyNode(BaseModel):
     """
     Represents a dependency unit (module, package, or external library).
     """
@@ -20,11 +19,10 @@ class DependencyNode:
     node_type: str  # module, package, external
     file_path: Optional[str] = None
     language: Optional[str] = None
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class DependencyEdge:
+class DependencyEdge(BaseModel):
     """
     Represents a dependency relationship.
     """
@@ -32,13 +30,11 @@ class DependencyEdge:
     target: str
     dependency_type: str  # import, include, requires, uses
 
-
-@dataclass
-class DependencyGraph:
+class DependencyGraph(BaseModel):
     """
     Container for the dependency graph.
     """
     language: str
     nodes: Dict[str, DependencyNode]
     edges: List[DependencyEdge]
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)

@@ -9,6 +9,7 @@ Purpose:
 
 from typing import Dict, List
 import uuid
+import logging
 
 from static_analysis.ast_model import ASTTree, ASTNode
 from static_analysis.cfg_model import CFGNode, CFGEdge, ControlFlowGraph
@@ -99,13 +100,19 @@ class JavaCFGBuilder(CFGBuilder):
     """
     Simplified Java CFG builder.
     """
+    logger = logging.getLogger(__name__)
 
     def build(self, ast_tree: ASTTree) -> List[ControlFlowGraph]:
         graphs: List[ControlFlowGraph] = []
+        self.logger.info(f"Building CFG build entered in file: {ast_tree.file_path}")
 
-        for node in ast_tree.root.children:
-            if node.node_type == "MethodDeclaration":
-                graphs.append(self._build_method_cfg(node, ast_tree))
+        for first_level_node in ast_tree.root.children:
+            if first_level_node.node_type == "ClassDeclaration":
+                self.logger.info(f"Building CFG for ClassDeclaration: {first_level_node.name}")
+                for second_level_node in first_level_node.children:
+                    if second_level_node.node_type == "MethodDeclaration":
+                        self.logger.info(f"Building CFG for MethodDeclaration: {second_level_node.name}")
+                        graphs.append(self._build_method_cfg(second_level_node, ast_tree))
 
         return graphs
 
@@ -129,6 +136,7 @@ class JavaCFGBuilder(CFGBuilder):
         prev_id = entry_id
 
         for stmt in method_node.children:
+            self.logger.debug(f"Building CFG for node children stmt.node_type: {stmt.node_type}")
             stmt_id = self._new_id()
             nodes[stmt_id] = CFGNode(
                 node_id=stmt_id,
@@ -185,4 +193,6 @@ def build_cfg(ast_tree: ASTTree) -> List[ControlFlowGraph]:
     Functional entry point for CFG generation.
     """
     builder = CFGBuilderFactory.get_builder(ast_tree.language)
+    logger = logging.getLogger(__name__)
+    logger.info(f"Building CFG for file: {ast_tree.file_path} with language: {ast_tree.language}")
     return builder.build(ast_tree)

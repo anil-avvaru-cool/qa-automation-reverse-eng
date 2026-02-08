@@ -7,23 +7,20 @@ Purpose:
 - Serve semantic analysis and test generation
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
-
-@dataclass
-class DFGNode:
+class DFGNode(BaseModel):
     """
     Represents a data operation (define/use/compute).
     """
     node_id: str
     variable: Optional[str]
     operation: str  # e.g., DEFINE, USE, ASSIGN, PARAM, RETURN
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class DFGEdge:
+class DFGEdge(BaseModel):
     """
     Represents data dependency between operations.
     """
@@ -32,8 +29,8 @@ class DFGEdge:
     label: Optional[str] = None  # e.g., variable name
 
 
-@dataclass
-class DataFlowGraph:
+class DataFlowGraph(BaseModel):
+
     """
     Container for a function or method DFG.
     """
@@ -41,4 +38,4 @@ class DataFlowGraph:
     language: str
     nodes: Dict[str, DFGNode]
     edges: List[DFGEdge]
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)

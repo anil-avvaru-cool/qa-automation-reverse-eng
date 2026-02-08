@@ -7,23 +7,21 @@ Purpose:
 - Serve as input to semantic and test-generation layers
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
-@dataclass
-class CFGNode:
+class CFGNode(BaseModel):
     """
     Represents a basic block or control point.
     """
     node_id: str
     node_type: str
     label: Optional[str] = None
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class CFGEdge:
+class CFGEdge(BaseModel):
     """
     Represents a directed control-flow transition.
     """
@@ -32,8 +30,7 @@ class CFGEdge:
     condition: Optional[str] = None
 
 
-@dataclass
-class ControlFlowGraph:
+class ControlFlowGraph(BaseModel):
     """
     Container for a function or method CFG.
     """
@@ -43,4 +40,4 @@ class ControlFlowGraph:
     exit_nodes: List[str]
     nodes: Dict[str, CFGNode]
     edges: List[CFGEdge]
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)

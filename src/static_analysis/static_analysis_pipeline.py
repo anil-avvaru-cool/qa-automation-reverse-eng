@@ -12,6 +12,10 @@ from typing import Dict, Any, List
 from pydantic import BaseModel, TypeAdapter
 
 from static_analysis.ast_model import ASTNode, ASTTree, SourceLocation
+from static_analysis.cfg_model import CFGNode, CFGEdge, ControlFlowGraph
+from static_analysis.dfg_model import DFGNode, DFGEdge
+from static_analysis.call_graph_model import CallGraphNode, CallGraphEdge
+from static_analysis.dependency_graph_model import DependencyNode, DependencyEdge, DependencyGraph
 from static_analysis.ast_parser import parse_source_file
 from static_analysis.cfg_builder import build_cfg
 from static_analysis.dfg_builder import build_dfg
@@ -74,12 +78,26 @@ class StaticAnalysisPipeline:
                 dependency_graphs
             )
         }
-        # Create an adapter for a list of ASTTree objects
-        adapter = TypeAdapter(List[ASTTree])
+        
+        # ast_tree_adapter = TypeAdapter(List[ASTTree])        
+        # json_bytes = ast_tree_adapter.dump_json(ast_trees)        
+        # self.logger.info(f"ASTTree output:\n{json_bytes.decode()}")
 
-        # Use dump_json() (Note: this returns bytes by default)
-        json_bytes = adapter.dump_json(ast_trees)        
-        self.logger.info(f"static analysis output:\n{json_bytes.decode()}")
+        # cfg_adapter = TypeAdapter(List[ControlFlowGraph])        
+        # json_bytes = cfg_adapter.dump_json(cfgs)        
+        # self.logger.info(f"ControlFlowGraph output:\n{json_bytes.decode()}")
+
+        # dfg_adapter = TypeAdapter(List[DFGNode])        
+        # json_bytes = dfg_adapter.dump_json(dfgs)        
+        # self.logger.info(f"DFGNode output:\n{json_bytes.decode()}")
+
+        # call_graph_adapter = TypeAdapter(List[CallGraphNode])        
+        # json_bytes = call_graph_adapter.dump_json(call_graphs)        
+        # self.logger.info(f"CallGraphNode output:\n{json_bytes.decode()}")
+
+        # dependency_graph_adapter = TypeAdapter(List[DependencyGraphNode])        
+        # json_bytes = dependency_graph_adapter.dump_json(dependency_graphs)        
+        # self.logger.info(f"DependencyGraphNode output:\n{json_bytes.decode()}")
 
         return static_analysis_output
 
