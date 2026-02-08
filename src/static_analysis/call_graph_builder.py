@@ -8,6 +8,7 @@ Purpose:
 
 from typing import Dict, List
 import uuid
+import logging
 
 from static_analysis.ast_model import ASTTree, ASTNode
 from static_analysis.call_graph_model import (
@@ -109,6 +110,7 @@ class JavaCallGraphBuilder(CallGraphBuilder):
     """
     Static Java call graph builder (best-effort).
     """
+    logger = logging.getLogger(__name__)
 
     def build(self, ast_tree: ASTTree) -> CallGraph:
         nodes: Dict[str, CallGraphNode] = {}
@@ -117,6 +119,7 @@ class JavaCallGraphBuilder(CallGraphBuilder):
         methods = self._collect_methods(ast_tree)
 
         for caller_name, caller_id in methods.items():
+            self.logger.info(f"Building call graph for caller_name: {caller_name} and caller_id: {caller_id}")
             for callee_name in self._find_calls(ast_tree):
                 if callee_name in methods:
                     edges.append(
@@ -146,9 +149,13 @@ class JavaCallGraphBuilder(CallGraphBuilder):
     ) -> Dict[str, str]:
         methods: Dict[str, str] = {}
 
-        for node in ast_tree.root.children:
-            if node.node_type == "MethodDeclaration":
-                methods[node.name] = self._new_id()
+        for first_level_node in ast_tree.root.children:
+            if first_level_node.node_type == "ClassDeclaration":
+                self.logger.info(f"Building call graph for ClassDeclaration: {first_level_node.name}")
+                for second_level_node in first_level_node.children:
+                    if second_level_node.node_type == "MethodDeclaration":
+                        self.logger.info(f"Building call graph for MethodDeclaration: {second_level_node.name}")
+                        methods[second_level_node.name] = self._new_id()        
 
         return methods
 
