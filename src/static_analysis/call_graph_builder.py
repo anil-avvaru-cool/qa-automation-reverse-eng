@@ -164,7 +164,11 @@ class JavaCallGraphBuilder(CallGraphBuilder):
 
         def walk(node: ASTNode):
             if node.node_type in ("MethodInvocation", "SuperMethodInvocation"):
-                calls.append(node.name)
+                qualifier = node.attributes["qualifier"] or ""
+                member = node.attributes["member"] 
+                method_invocation = f"{qualifier}.{member}" if qualifier else member                
+                self.logger.info(f"Building call graph for MethodInvocation: {method_invocation}")
+                calls.append(method_invocation)
             for child in node.children:
                 walk(child)
 

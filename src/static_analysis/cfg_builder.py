@@ -10,6 +10,7 @@ Purpose:
 from typing import Dict, List
 import uuid
 import logging
+import javalang
 
 from static_analysis.ast_model import ASTTree, ASTNode
 from static_analysis.cfg_model import CFGNode, CFGEdge, ControlFlowGraph
@@ -106,13 +107,32 @@ class JavaCFGBuilder(CFGBuilder):
         graphs: List[ControlFlowGraph] = []
         self.logger.info(f"Building CFG build entered in file: {ast_tree.file_path}")
 
+        # class_node = [item for item in ast_tree.root.children if item == javalang.tree.ClassDeclaration]
+        # self.logger.info(f"** new way Building CFG for ClassDeclaration: {path} {node}")
+
+
+        # for path, node in ast_tree.root.children.filter(javalang.tree.ClassDeclaration):
+        #     self.logger.info(f"** new way Building CFG for ClassDeclaration: {path} {node}")
+
+        # # Extract all method nodes first
+        # method_nodes = [
+        #     m for cls in ast_tree.root.children if cls.node_type == "ClassDeclaration"
+        #     for m in cls.children if m.node_type == "MethodDeclaration"
+        # ]
+
+        # # Process them
+        # for node in method_nodes:
+        #     self.logger.info(f"Building CFG for MethodDeclaration: {node.name}")
+        #     graphs.append(self._build_method_cfg(node, ast_tree))
+
         for first_level_node in ast_tree.root.children:
             if first_level_node.node_type == "ClassDeclaration":
-                self.logger.info(f"Building CFG for ClassDeclaration: {first_level_node.name}")
+                # self.logger.info(f"Building CFG for ClassDeclaration: {first_level_node.name}")
                 for second_level_node in first_level_node.children:
                     if second_level_node.node_type == "MethodDeclaration":
                         self.logger.info(f"Building CFG for MethodDeclaration: {second_level_node.name}")
                         graphs.append(self._build_method_cfg(second_level_node, ast_tree))
+                
 
         return graphs
 

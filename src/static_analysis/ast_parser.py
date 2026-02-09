@@ -9,6 +9,7 @@ Purpose:
 
 from pathlib import Path
 from typing import Optional, Any
+import logging
 
 import ast as python_ast
 
@@ -94,6 +95,7 @@ class PythonASTParser(BaseASTParser):
 
 class JavaASTParser(BaseASTParser):
     language = "Java"
+    logger = logging.getLogger(__name__)
 
     def parse(self, file_path: str) -> ASTTree:
         if javalang is None:
@@ -103,6 +105,9 @@ class JavaASTParser(BaseASTParser):
 
         source = Path(file_path).read_text(encoding="utf-8", errors="ignore")
         parsed = javalang.parse.parse(source)
+
+        # for path, node in parsed.filter(javalang.tree.ClassDeclaration):
+        #     self.logger.info(f"Building AST for ClassDeclaration: {node} ")
 
         root_node = self._convert_node(parsed, file_path)
         return ASTTree(

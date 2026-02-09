@@ -51,7 +51,9 @@ class StaticAnalysisPipeline:
         call_graphs = []
         dependency_graphs = []
 
-        for file_path in self.normalized_files[:3]:
+        filtered_normalized_files = [item for item in self.normalized_files if item.endswith(('RunCukesTest.java'))]
+
+        for file_path in filtered_normalized_files:
             language = self.language_map.get(file_path)
             if not language:
                 continue
@@ -79,9 +81,9 @@ class StaticAnalysisPipeline:
             )
         }
         
-        # ast_tree_adapter = TypeAdapter(List[ASTTree])        
-        # json_bytes = ast_tree_adapter.dump_json(ast_trees)        
-        # self.logger.info(f"ASTTree output:\n{json_bytes.decode()}")
+        ast_tree_adapter = TypeAdapter(List[ASTTree])        
+        json_bytes = ast_tree_adapter.dump_json(ast_trees)        
+        self.logger.info(f"ASTTree output:\n{json_bytes.decode()}")
 
         # cfg_adapter = TypeAdapter(List[ControlFlowGraph])        
         # json_bytes = cfg_adapter.dump_json(cfgs)        
