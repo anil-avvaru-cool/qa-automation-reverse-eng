@@ -51,7 +51,7 @@ class StaticAnalysisPipeline:
         call_graphs = []
         dependency_graphs = []
 
-        filtered_normalized_files = [item for item in self.normalized_files if item.endswith(('RunCukesTest.java'))]
+        filtered_normalized_files = [item for item in self.normalized_files if item.endswith(('OrderService.java'))]
 
         for file_path in filtered_normalized_files:
             language = self.language_map.get(file_path)
@@ -63,7 +63,10 @@ class StaticAnalysisPipeline:
 
             cfgs.extend(build_cfg(ast_tree))
             dfgs.extend(build_dfg(ast_tree))
-            call_graphs.append(build_call_graph(ast_tree))
+            call_graph = build_call_graph(ast_tree)
+            call_graph_json_string = call_graph.model_dump_json(indent=2)
+            self.logger.info(f"Building call graph final review obj : {call_graph_json_string}")
+            call_graphs.append(call_graph)
             dependency_graphs.append(build_dependency_graph(ast_tree))
 
         static_analysis_output = {
@@ -80,26 +83,9 @@ class StaticAnalysisPipeline:
                 dependency_graphs
             )
         }
-        
         ast_tree_adapter = TypeAdapter(List[ASTTree])        
         json_bytes = ast_tree_adapter.dump_json(ast_trees)        
         self.logger.info(f"ASTTree output:\n{json_bytes.decode()}")
-
-        # cfg_adapter = TypeAdapter(List[ControlFlowGraph])        
-        # json_bytes = cfg_adapter.dump_json(cfgs)        
-        # self.logger.info(f"ControlFlowGraph output:\n{json_bytes.decode()}")
-
-        # dfg_adapter = TypeAdapter(List[DFGNode])        
-        # json_bytes = dfg_adapter.dump_json(dfgs)        
-        # self.logger.info(f"DFGNode output:\n{json_bytes.decode()}")
-
-        # call_graph_adapter = TypeAdapter(List[CallGraphNode])        
-        # json_bytes = call_graph_adapter.dump_json(call_graphs)        
-        # self.logger.info(f"CallGraphNode output:\n{json_bytes.decode()}")
-
-        # dependency_graph_adapter = TypeAdapter(List[DependencyGraphNode])        
-        # json_bytes = dependency_graph_adapter.dump_json(dependency_graphs)        
-        # self.logger.info(f"DependencyGraphNode output:\n{json_bytes.decode()}")
 
         return static_analysis_output
 
@@ -113,12 +99,13 @@ class StaticAnalysisPipeline:
     ) -> Dict[str, int]:
         """
         Build a concise analysis summary.
-        """
+        """    
+        
         return {
             "total_files_parsed": len(asts),
             "total_cfgs": len(cfgs),
             "total_dfgs": len(dfgs),
-            "total_call_graphs": len(call_graphs),
+            "total_call_graphs nodes": len(call_graphs[0].nodes) if len(call_graphs) > 0 else 0,
             "total_dependency_graphs": len(dependency_graphs)
         }
 
