@@ -7,7 +7,7 @@ Purpose:
 - Enable path-based test generation
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 import uuid
 import logging
 import javalang
@@ -99,92 +99,160 @@ class PythonCFGBuilder(CFGBuilder):
 
 class JavaCFGBuilder(CFGBuilder):
     """
-    Simplified Java CFG builder.
+    Intra-procedural Control Flow Graph builder for Java (javalang AST).
     """
-    logger = logging.getLogger(__name__)
 
     def build(self, ast_tree: ASTTree) -> List[ControlFlowGraph]:
-        graphs: List[ControlFlowGraph] = []
-        self.logger.info(f"Building CFG build entered in file: {ast_tree.file_path}")
+        cfgs: List[ControlFlowGraph] = []
+        current_class: Optional[str] = None
 
-        # class_node = [item for item in ast_tree.root.children if item == javalang.tree.ClassDeclaration]
-        # self.logger.info(f"** new way Building CFG for ClassDeclaration: {path} {node}")
+        def method_id(class_name: Optional[str], method_name: str) -> str:
+            return f"{class_name}.{method_name}" if class_name else method_name
 
+        def visit(node: ASTNode):
+            nonlocal current_class
 
-        # for path, node in ast_tree.root.children.filter(javalang.tree.ClassDeclaration):
-        #     self.logger.info(f"** new way Building CFG for ClassDeclaration: {path} {node}")
+            if node.node_type == "ClassDeclaration":
+                current_class = node.name
 
-        # # Extract all method nodes first
-        # method_nodes = [
-        #     m for cls in ast_tree.root.children if cls.node_type == "ClassDeclaration"
-        #     for m in cls.children if m.node_type == "MethodDeclaration"
-        # ]
+            elif node.node_type in ("MethodDeclaration", "ConstructorDeclaration"):
+                mid = method_id(current_class, node.name)
+                cfg = self._build_method_cfg(ast_tree, mid, node)
+                cfgs.append(cfg)
 
-        # # Process them
-        # for node in method_nodes:
-        #     self.logger.info(f"Building CFG for MethodDeclaration: {node.name}")
-        #     graphs.append(self._build_method_cfg(node, ast_tree))
+            for child in node.children or []:
+                visit(child)
 
-        for first_level_node in ast_tree.root.children:
-            if first_level_node.node_type == "ClassDeclaration":
-                # self.logger.info(f"Building CFG for ClassDeclaration: {first_level_node.name}")
-                for second_level_node in first_level_node.children:
-                    if second_level_node.node_type == "MethodDeclaration":
-                        self.logger.info(f"Building CFG for MethodDeclaration: {second_level_node.name}")
-                        graphs.append(self._build_method_cfg(second_level_node, ast_tree))
-                
+            if node.node_type == "ClassDeclaration":
+                current_class = None
 
-        return graphs
+        visit(ast_tree.root)
+        return cfgs
+
+    # ------------------------------------------------------------------
+    # Method-level CFG
+    # ------------------------------------------------------------------
 
     def _build_method_cfg(
         self,
-        method_node: ASTNode,
-        ast_tree: ASTTree
+        ast_tree: ASTTree,
+        method_id: str,
+        method_node: ASTNode
     ) -> ControlFlowGraph:
+
+        graph_id = f"{method_id}_cfg"
+
         nodes: Dict[str, CFGNode] = {}
         edges: List[CFGEdge] = []
+        exit_nodes: List[str] = []
 
-        entry_id = self._new_id()
-        exit_id = self._new_id()
+        def new_id() -> str:
+            return str(uuid.uuid4())
 
-        nodes[entry_id] = CFGNode(
-            node_id=entry_id,
-            node_type="ENTRY",
-            label=method_node.name
-        )
-
-        prev_id = entry_id
-
-        for stmt in method_node.children:
-            self.logger.debug(f"Building CFG for node children stmt.node_type: {stmt.node_type}")
-            stmt_id = self._new_id()
-            nodes[stmt_id] = CFGNode(
-                node_id=stmt_id,
-                node_type=stmt.node_type,
-                metadata={"ast_type": stmt.node_type}
+        def add_node(node_type: str, label: str, metadata=None) -> str:
+            nid = new_id()
+            nodes[nid] = CFGNode(
+                node_id=nid,
+                node_type=node_type,
+                label=label,
+                metadata=metadata or {}
             )
-            edges.append(CFGEdge(source=prev_id, target=stmt_id))
-            prev_id = stmt_id
+            return nid
 
-        nodes[exit_id] = CFGNode(
-            node_id=exit_id,
-            node_type="EXIT"
+        def add_edge(src: str, tgt: str, edge_type="normal"):
+            edges.append(
+                CFGEdge(
+                    source=src,
+                    target=tgt,
+                    edge_type=edge_type
+                )
+            )
+
+        def connect(srcs: List[str], tgt: str):
+            for s in srcs:
+                add_edge(s, tgt)
+
+        # --------------------------------------------------------------
+        # ENTRY
+        # --------------------------------------------------------------
+
+        entry_id = add_node("ENTRY", "ENTRY")
+        current_exits = [entry_id]
+
+        # --------------------------------------------------------------
+        # Statement Processing
+        # --------------------------------------------------------------
+
+        def process_statement(stmt: ASTNode, incoming: List[str]) -> List[str]:
+            stype = stmt.node_type
+
+            # ---- IF ----
+            if stype == "IfStatement":
+                cond_id = add_node("CONDITION", "if")
+                connect(incoming, cond_id)
+
+                then_block = stmt.children[1] if len(stmt.children) > 1 else None
+                else_block = stmt.children[2] if len(stmt.children) > 2 else None
+
+                then_exits = process_block(then_block, [cond_id])
+                else_exits = process_block(else_block, [cond_id]) if else_block else []
+
+                return then_exits + else_exits or [cond_id]
+
+            # ---- RETURN ----
+            if stype == "ReturnStatement":
+                ret_id = add_node("RETURN", "return")
+                connect(incoming, ret_id)
+                exit_nodes.append(ret_id)
+                return []
+
+            # ---- GENERIC STATEMENT ----
+            stmt_id = add_node("STATEMENT", stype)
+            connect(incoming, stmt_id)
+            return [stmt_id]
+
+        def process_block(block: Optional[ASTNode], incoming: List[str]) -> List[str]:
+            if not block:
+                return incoming
+
+            exits = incoming
+            for stmt in block.children or []:
+                exits = process_statement(stmt, exits)
+            return exits
+
+        # --------------------------------------------------------------
+        # Locate Method Body
+        # --------------------------------------------------------------
+
+        body = next(
+            (c for c in method_node.children or [] if c.node_type == "BlockStatement"),
+            None
         )
-        edges.append(CFGEdge(source=prev_id, target=exit_id))
+
+        if body:
+            current_exits = process_block(body, current_exits)
+
+        # --------------------------------------------------------------
+        # EXIT handling
+        # --------------------------------------------------------------
+
+        if not exit_nodes:
+            exit_nodes = current_exits
 
         return ControlFlowGraph(
-            graph_id=f"{ast_tree.file_path}:{method_node.name}",
+            graph_id=graph_id,
             language=ast_tree.language,
-            entry_node=entry_id,
-            exit_nodes=[exit_id],
+            method_id=method_id,
             nodes=nodes,
             edges=edges,
-            metadata={"type": "method"}
+            entry_node=entry_id,
+            exit_nodes=list(set(exit_nodes)),
+            metadata={
+                "file_path": ast_tree.file_path,
+                "builder": "JavaCFGBuilder"
+            }
         )
 
-    @staticmethod
-    def _new_id() -> str:
-        return str(uuid.uuid4())
 
 
 # =========================
