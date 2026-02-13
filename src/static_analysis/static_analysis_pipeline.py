@@ -67,7 +67,11 @@ class StaticAnalysisPipeline:
             call_graph_json_string = call_graph.model_dump_json(indent=2)
             self.logger.info(f"Building call graph final review obj : {call_graph_json_string}")
             call_graphs.append(call_graph)
-            dependency_graphs.append(build_dependency_graph(ast_tree))
+            
+            dependency_graph = build_dependency_graph(ast_tree)
+            dependency_graph_json_string = dependency_graph.model_dump_json(indent=2)
+            self.logger.info(f"Building dependency graph final review obj : {dependency_graph_json_string}")
+            dependency_graphs.append(dependency_graph)
 
         static_analysis_output = {
             "ast_trees": ast_trees,
@@ -105,7 +109,8 @@ class StaticAnalysisPipeline:
             "total_files_parsed": len(asts),
             "total_cfgs": len(cfgs),
             "total_dfgs": len(dfgs),
-            "total_call_graphs nodes": len(call_graphs[0].nodes) if len(call_graphs) > 0 else 0,
+            "total_call_graphs": len(call_graphs),
+            #"nodes for first call_graph": len(call_graphs[0].nodes) if len(call_graphs) > 0 else 0,
             "total_dependency_graphs": len(dependency_graphs)
         }
 

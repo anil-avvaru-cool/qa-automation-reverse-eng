@@ -11,31 +11,24 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 class DFGNode(BaseModel):
-    """
-    Represents a data operation (define/use/compute).
-    """
     node_id: str
-    variable: Optional[str]
-    operation: str  # e.g., DEFINE, USE, ASSIGN, PARAM, RETURN
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    variable_name: str
+    kind: str  # definition | usage | parameter | return
+    method_id: str
+    line: Optional[int] = None
 
 
 class DFGEdge(BaseModel):
-    """
-    Represents data dependency between operations.
-    """
-    source: str
-    target: str
-    label: Optional[str] = None  # e.g., variable name
+    edge_id: str
+    source_node_id: str
+    target_node_id: str
+    relation: str  # flows_to
 
 
 class DataFlowGraph(BaseModel):
-
-    """
-    Container for a function or method DFG.
-    """
     graph_id: str
     language: str
-    nodes: Dict[str, DFGNode]
-    edges: List[DFGEdge]
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    method_id: str
+    nodes: List[DFGNode] = Field(default_factory=list)
+    edges: List[DFGEdge] = Field(default_factory=list)
+    metadata: Dict[str, str] = Field(default_factory=dict)
