@@ -10,10 +10,12 @@ Purpose:
 from typing import Dict, List, Optional, Set
 import uuid
 import javalang
+import logging
 
 from static_analysis.ast_model import ASTTree, ASTNode
 from static_analysis.dfg_model import DFGNode, DFGEdge, DataFlowGraph
 
+logger = logging.getLogger(__name__)
 
 class DFGBuilder:
     """
@@ -124,120 +126,130 @@ class PythonDFGBuilder(DFGBuilder):
 #   - file_path: str
 #   - root: javalang AST root
 
-
 # ============================================================
-# Java DFG Builder (Factory Compatible)
+# JavaDFGBuilder (Factory-Compatible + ASTNode Traversal)
 # ============================================================
 
 class JavaDFGBuilder:
     """
-    Factory-compatible, stateless Java DFG builder.
+    Factory-compatible Java DFG builder.
 
-    Entry:
-        build(ast_tree) -> List[DataFlowGraph]
-
-    Scope:
-        Intra-procedural only.
-        One DFG per MethodDeclaration.
-    """
+    Assumes ASTTree.root is a normalized ASTNode model:
+        ASTNode:
+            - node_type: str
+            - name: Optional[str]
+            - children: List[ASTNode]
+            - attributes: Dict[str, Any]
+            - line: Optional[int]
+    """    
 
     def __init__(self):
         self.language = "java"
 
     # --------------------------------------------------------
-    # Public API
+    # Public Entry
     # --------------------------------------------------------
 
     def build(self, ast_tree) -> List[DataFlowGraph]:
-        """
-        Build DFGs for all methods inside a Java ASTTree.
-        """
 
         if ast_tree.language.lower() != "java":
             raise ValueError(
                 f"JavaDFGBuilder cannot process language={ast_tree.language}"
             )
 
-        root = ast_tree.root
-        file_path = ast_tree.file_path
-
         graphs: List[DataFlowGraph] = []
 
-        for _, node in root.filter(javalang.tree.MethodDeclaration):
-            graph = self._build_method_dfg(node, file_path)
-            graphs.append(graph)
+        methods = self._collect_methods(ast_tree.root)
 
         logger.info(
-            "Java DFG build complete",
+            "JavaDFGBuilder: Methods discovered",
             extra={
-                "file_path": file_path,
-                "total_methods": len(graphs)
+                "file_path": ast_tree.file_path,
+                "method_count": len(methods)
             }
         )
+
+        for method_node in methods:
+            graph = self._build_method_dfg(
+                method_node,
+                ast_tree.file_path
+            )
+            graphs.append(graph)
 
         return graphs
 
     # --------------------------------------------------------
-    # Per-Method Builder
+    # AST Traversal (NO .filter())
     # --------------------------------------------------------
 
-    def _build_method_dfg(
-        self,
-        method_node: javalang.tree.MethodDeclaration,
-        file_path: str
-    ) -> DataFlowGraph:
+    def _collect_methods(self, node) -> List:
+        methods = []
 
-        graph_id = self._generate_graph_id(file_path, method_node.name)
+        if node.node_type == "MethodDeclaration":
+            methods.append(node)
+
+        for child in getattr(node, "children", []) or []:
+            methods.extend(self._collect_methods(child))
+
+        return methods
+
+    # --------------------------------------------------------
+    # Per-Method DFG
+    # --------------------------------------------------------
+
+    def _build_method_dfg(self, method_node, file_path: str) -> DataFlowGraph:
+
+        method_name = method_node.name
+        graph_id = self._generate_graph_id(file_path, method_name)
 
         graph = DataFlowGraph(
             graph_id=graph_id,
             language=self.language,
-            method_id=method_node.name,
+            method_id=method_name,
             metadata={"file_path": file_path}
-        )
-
-        logger.info(
-            "Building Java DFG for method",
-            extra={
-                "file_path": file_path,
-                "method_id": method_node.name,
-                "graph_id": graph_id
-            }
         )
 
         definition_map: Dict[str, DFGNode] = {}
 
-        # ----------------------------------------------------
-        # Parameters → definition nodes
-        # ----------------------------------------------------
-        if method_node.parameters:
-            for param in method_node.parameters:
-                param_node = self._create_node(
-                    variable_name=param.name,
-                    kind="parameter",
-                    method_id=method_node.name,
-                    line=self._safe_line(param)
-                )
-                graph.nodes.append(param_node)
-                definition_map[param.name] = param_node
+        logger.info(
+            "Building Java DFG",
+            extra={
+                "file_path": file_path,
+                "method_id": method_name,
+                "graph_id": graph_id
+            }
+        )
 
         # ----------------------------------------------------
-        # Process method body
+        # Parameters
         # ----------------------------------------------------
-        if method_node.body:
-            for statement in method_node.body:
-                self._process_statement(
-                    statement,
-                    method_node.name,
-                    graph,
-                    definition_map
-                )
+        parameters = method_node.attributes.get("parameters", [])
+
+        for param in parameters:
+            param_node = self._create_node(
+                variable_name=param.get("name"),
+                kind="parameter",
+                method_id=method_name,
+                line=method_node.line
+            )
+            graph.nodes.append(param_node)
+            definition_map[param.get("name")] = param_node
+
+        # ----------------------------------------------------
+        # Traverse method body
+        # ----------------------------------------------------
+        for child in method_node.children:
+            self._process_node(
+                child,
+                method_name,
+                graph,
+                definition_map
+            )
 
         logger.info(
             "Java DFG constructed",
             extra={
                 "graph_id": graph_id,
-                "method_id": method_node.name,
                 "node_count": len(graph.nodes),
                 "edge_count": len(graph.edges)
             }
@@ -246,117 +258,49 @@ class JavaDFGBuilder:
         return graph
 
     # --------------------------------------------------------
-    # Statement Processing
+    # Generic ASTNode Processing
     # --------------------------------------------------------
 
-    def _process_statement(
+    def _process_node(
         self,
-        statement,
+        node,
         method_id: str,
         graph: DataFlowGraph,
         definition_map: Dict[str, DFGNode]
     ):
 
-        if isinstance(statement, javalang.tree.LocalVariableDeclaration):
-            for declarator in statement.declarators:
-                def_node = self._create_node(
-                    variable_name=declarator.name,
-                    kind="definition",
-                    method_id=method_id,
-                    line=self._safe_line(statement)
-                )
-                graph.nodes.append(def_node)
-                definition_map[declarator.name] = def_node
+        if node.node_type == "VariableDeclarator":
+            var_name = node.name
 
-                if declarator.initializer:
-                    self._process_expression(
-                        declarator.initializer,
-                        method_id,
-                        graph,
-                        definition_map,
-                        target_node=def_node
-                    )
-
-        elif isinstance(statement, javalang.tree.StatementExpression):
-            self._process_expression(
-                statement.expression,
-                method_id,
-                graph,
-                definition_map
+            def_node = self._create_node(
+                variable_name=var_name,
+                kind="definition",
+                method_id=method_id,
+                line=self._resolve_line(node, fallback=node.parent.line)
             )
+            graph.nodes.append(def_node)
+            definition_map[var_name] = def_node
 
-        elif isinstance(statement, javalang.tree.ReturnStatement):
-            if statement.expression:
-                return_node = self._create_node(
-                    variable_name="return",
-                    kind="return",
-                    method_id=method_id,
-                    line=self._safe_line(statement)
-                )
-                graph.nodes.append(return_node)
+        elif node.node_type == "Assignment":
+            var_name = node.attributes.get("left")
 
-                self._process_expression(
-                    statement.expression,
-                    method_id,
-                    graph,
-                    definition_map,
-                    target_node=return_node
-                )
+            def_node = self._create_node(
+                variable_name=var_name,
+                kind="definition",
+                method_id=method_id,
+                line=node.line
+            )
+            graph.nodes.append(def_node)
+            definition_map[var_name] = def_node
 
-        elif hasattr(statement, "statements") and statement.statements:
-            for nested in statement.statements:
-                self._process_statement(
-                    nested,
-                    method_id,
-                    graph,
-                    definition_map
-                )
-
-    # --------------------------------------------------------
-    # Expression Processing
-    # --------------------------------------------------------
-
-    def _process_expression(
-        self,
-        expression,
-        method_id: str,
-        graph: DataFlowGraph,
-        definition_map: Dict[str, DFGNode],
-        target_node: Optional[DFGNode] = None
-    ):
-
-        if isinstance(expression, javalang.tree.Assignment):
-            left = expression.expressionl
-            right = expression.value
-
-            if isinstance(left, javalang.tree.MemberReference):
-                var_name = left.member
-
-                def_node = self._create_node(
-                    variable_name=var_name,
-                    kind="definition",
-                    method_id=method_id,
-                    line=self._safe_line(expression)
-                )
-                graph.nodes.append(def_node)
-                definition_map[var_name] = def_node
-
-                self._process_expression(
-                    right,
-                    method_id,
-                    graph,
-                    definition_map,
-                    target_node=def_node
-                )
-
-        elif isinstance(expression, javalang.tree.MemberReference):
-            var_name = expression.member
+        elif node.node_type == "MemberReference":
+            var_name = node.name
 
             use_node = self._create_node(
                 variable_name=var_name,
                 kind="usage",
                 method_id=method_id,
-                line=self._safe_line(expression)
+                line=node.line
             )
             graph.nodes.append(use_node)
 
@@ -367,27 +311,34 @@ class JavaDFGBuilder:
                     graph
                 )
 
-            if target_node:
-                self._create_edge(
-                    use_node,
-                    target_node,
-                    graph
-                )
+        elif node.node_type == "ReturnStatement":
+            return_node = self._create_node(
+                variable_name="return",
+                kind="return",
+                method_id=method_id,
+                line=node.line
+            )
+            graph.nodes.append(return_node)
 
-        elif hasattr(expression, "children"):
-            for child in expression.children:
-                if child:
-                    self._process_expression(
-                        child,
-                        method_id,
-                        graph,
-                        definition_map,
-                        target_node
-                    )
+        # Recurse
+        for child in getattr(node, "children", []) or []:
+            self._process_node(
+                child,
+                method_id,
+                graph,
+                definition_map
+            )
 
     # --------------------------------------------------------
     # Utilities
     # --------------------------------------------------------
+    def _resolve_line(self, node, fallback=None):
+        current = node
+        while current:
+            if current.line:
+                return current.line
+            current = current.parent
+        return fallback
 
     def _create_node(
         self,
@@ -422,12 +373,6 @@ class JavaDFGBuilder:
     def _generate_graph_id(self, file_path: str, method_name: str) -> str:
         base = f"{file_path}:{method_name}:dfg"
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, base))
-
-    def _safe_line(self, node) -> Optional[int]:
-        if hasattr(node, "position") and node.position:
-            return node.position.line
-        return None
-
 
 
 # =========================

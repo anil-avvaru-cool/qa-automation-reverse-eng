@@ -13,13 +13,11 @@ import logging
 
 import ast as python_ast
 
-try:
-    import javalang
-except ImportError:
-    javalang = None
+import javalang
 
 from static_analysis.ast_model import ASTNode, ASTTree, SourceLocation
 
+logger = logging.getLogger(__name__)
 
 class BaseASTParser:
     """
@@ -92,82 +90,128 @@ class PythonASTParser(BaseASTParser):
 # =========================
 # Java AST Parser
 # =========================
-
 class JavaASTParser(BaseASTParser):
-    language = "Java"
-    logger = logging.getLogger(__name__)
+    """
+    Java AST parser compatible with ASTParserFactory.
+
+    Contract:
+        parse(file_path: str) -> ASTTree
+    """
+
+    language = "java"
+
+    # ---------------------------------------------------------
+    # Public API
+    # ---------------------------------------------------------
 
     def parse(self, file_path: str) -> ASTTree:
-        if javalang is None:
-            raise RuntimeError(
-                "javalang is required for Java parsing but is not installed"
+        """
+        Parse Java file and return normalized ASTTree.
+        """
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                source_code = f.read()
+        except Exception:
+            logger.exception(
+                "Failed to read Java file",
+                extra={"file_path": file_path}
             )
+            raise
 
-        source = Path(file_path).read_text(encoding="utf-8", errors="ignore")
-        parsed = javalang.parse.parse(source)
+        try:
+            raw_tree = javalang.parse.parse(source_code)
+        except Exception:
+            logger.exception(
+                "Java parsing failed",
+                extra={"file_path": file_path}
+            )
+            raise
 
-        # for path, node in parsed.filter(javalang.tree.ClassDeclaration):
-        #     self.logger.info(f"Building AST for ClassDeclaration: {node} ")
+        normalized_root = self._normalize_node(
+            raw_tree,
+            parent=None
+        )
 
-        root_node = self._convert_node(parsed, file_path)
+        logger.info(
+            "Java AST parsing and normalization complete",
+            extra={"file_path": file_path}
+        )
+
         return ASTTree(
             language=self.language,
             file_path=file_path,
-            root=root_node,
-            metadata={"parser": "javalang"}
+            root=normalized_root
         )
 
-    def _convert_node(
+    # ---------------------------------------------------------
+    # Recursive Normalization (Parent-Safe)
+    # ---------------------------------------------------------
+
+    def _normalize_node(
         self,
         node: Any,
-        file_path: str
-    ) -> ASTNode:
+        parent: Optional[ASTNode]
+    ) -> Optional[ASTNode]:
+
+        if node is None:
+            return None
+
+        if isinstance(node, (str, int, float, bool)):
+            return None
+
+        if not isinstance(node, javalang.ast.Node):
+            return None
+
         node_type = type(node).__name__
+        name = getattr(node, "name", None)
 
-        ast_node = ASTNode(
+        line = None
+        if hasattr(node, "position") and node.position:
+            line = node.position.line
+
+        attributes = {}
+
+        for attr in node.attrs:
+            value = getattr(node, attr)
+
+            if isinstance(value, (str, int, float, bool)):
+                attributes[attr] = value
+            elif isinstance(value, list):
+                continue
+            elif isinstance(value, javalang.ast.Node):
+                continue
+            else:
+                attributes[attr] = str(value)
+
+        normalized = ASTNode(
             node_type=node_type,
-            name=getattr(node, "name", None),
-            location=self._extract_location(node, file_path),
-            attributes={}
+            name=name,
+            attributes=attributes,
+            line=line
         )
 
-        if hasattr(node, "attrs"):
-            for attr in node.attrs:
-                value = getattr(node, attr)
-                if isinstance(value, list):
-                    for item in value:
-                        if self._is_ast_node(item):
-                            ast_node.add_child(
-                                self._convert_node(item, file_path)
-                            )
-                elif self._is_ast_node(value):
-                    ast_node.add_child(
-                        self._convert_node(value, file_path)
+        if parent:
+            normalized.set_parent(parent)
+
+        for child in node.children:
+            if isinstance(child, list):
+                for sub_child in child:
+                    child_node = self._normalize_node(
+                        sub_child,
+                        normalized
                     )
-                else:
-                    ast_node.attributes[attr] = value
+                    if child_node:
+                        normalized.add_child(child_node)
+            else:
+                child_node = self._normalize_node(
+                    child,
+                    normalized
+                )
+                if child_node:
+                    normalized.add_child(child_node)
 
-        return ast_node
-
-    @staticmethod
-    def _is_ast_node(obj: Any) -> bool:
-        return hasattr(obj, "__class__") and obj.__class__.__module__.startswith(
-            "javalang"
-        )
-
-    @staticmethod
-    def _extract_location(
-        node: Any,
-        file_path: str
-    ) -> Optional[SourceLocation]:
-        position = getattr(node, "position", None)
-        if position:
-            return SourceLocation(
-                file_path=file_path,
-                line_start=position.line,
-                column_start=position.column
-            )
-        return None
+        return normalized
 
 
 # =========================
